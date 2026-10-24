@@ -28,7 +28,7 @@ jobs:
           echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.p12"
       - name: Unzip project
         run: unzip -q MostafaDownloader.zip
-      - name: Build release APK
+      - name: Build release APKs
         working-directory: MostafaDownloader
         env:
           VERSION_CODE: ${{ github.run_number }}
@@ -37,12 +37,39 @@ jobs:
           KEY_ALIAS: mostafa
           KEY_PASSWORD: mostafadl2026
         run: gradle assembleRelease --no-daemon
-      - name: Rename APK
-        run: cp MostafaDownloader/app/build/outputs/apk/release/app-release.apk MostafaDownloader.apk
+      - name: Collect APKs
+        run: |
+          mkdir -p out
+          for abi in arm64-v8a armeabi-v7a; do
+            cp "MostafaDownloader/app/build/outputs/apk/release/app-$abi-release.apk" "out/MostafaDownloader-$abi.apk"
+            sha256sum "out/MostafaDownloader-$abi.apk" | cut -d' ' -f1 > "out/MostafaDownloader-$abi.apk.sha256"
+          done
+      - name: Create delta patches
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sudo apt-get update -y > /dev/null
+          sudo apt-get install -y bsdiff > /dev/null
+          for tag in $(gh release list --limit 2 --json tagName --jq '.[].tagName'); do
+            code="${tag#v}"
+            for abi in arm64-v8a armeabi-v7a; do
+              new="out/MostafaDownloader-$abi.apk"
+              if gh release download "$tag" --pattern "MostafaDownloader-$abi.apk" --output old.apk --clobber; then
+                bsdiff old.apk "$new" patch.bin
+                psz=$(stat -c%s patch.bin)
+                fsz=$(stat -c%s "$new")
+                if [ "$psz" -lt $((fsz * 6 / 10)) ]; then
+                  mv patch.bin "out/patch-from-$code-$abi.bin"
+                fi
+                rm -f old.apk patch.bin
+              fi
+            done
+          done
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ github.run_number }}
           name: MostafaDownloader v1.0.${{ github.run_number }}
           body: "Update ${{ github.run_number }}"
-          files: MostafaDownloader.apk
+          files: out/*
