@@ -1,7 +1,7 @@
 name: Build and Release APK
 on:
   push:
-    branches: [main]
+    branches: [main, test]
   workflow_dispatch:
 permissions:
   contents: write
@@ -51,7 +51,7 @@ jobs:
         run: |
           sudo apt-get update -y > /dev/null
           sudo apt-get install -y bsdiff > /dev/null
-          for tag in $(gh release list --limit 2 --json tagName --jq '.[].tagName'); do
+          for tag in $(gh release list --limit 20 --json tagName,isPrerelease --jq '[.[] | select(.isPrerelease | not)] | .[:2] | .[].tagName'); do
             code="${tag#v}"
             for abi in arm64-v8a armeabi-v7a; do
               new="out/MostafaDownloader-$abi.apk"
@@ -69,7 +69,8 @@ jobs:
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ github.run_number }}
-          name: MostafaDownloader v1.0.${{ github.run_number }}
+          tag_name: ${{ github.ref_name == 'main' && format('v{0}', github.run_number) || format('test-{0}', github.run_number) }}
+          name: ${{ github.ref_name == 'main' && format('MostafaDownloader v1.0.{0}', github.run_number) || format('TEST v1.0.{0}', github.run_number) }}
+          prerelease: ${{ github.ref_name != 'main' }}
           body: "Update ${{ github.run_number }}"
           files: out/*
