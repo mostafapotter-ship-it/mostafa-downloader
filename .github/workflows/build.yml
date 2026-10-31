@@ -48,18 +48,26 @@ jobs:
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
+          NEW_CODE: ${{ github.run_number }}
         run: |
           sudo apt-get update -y > /dev/null
           sudo apt-get install -y bsdiff > /dev/null
-          for tag in $(gh release list --limit 20 --json tagName,isPrerelease --jq '[.[] | select(.isPrerelease | not)] | .[:2] | .[].tagName'); do
+          tags=$(
+            gh release list --limit 50 --json tagName,isPrerelease --jq '[.[] | select(.isPrerelease == false)][:4][] | .tagName'
+            gh release list --limit 50 --json tagName,isPrerelease --jq '[.[] | select(.isPrerelease == true)][:4][] | .tagName'
+          )
+          for tag in $tags; do
             code="${tag#v}"
+            code="${code#test-}"
+            case "$code" in ''|*[!0-9]*) continue ;; esac
+            [ "$code" -ge "$NEW_CODE" ] && continue
             for abi in arm64-v8a armeabi-v7a; do
               new="out/MostafaDownloader-$abi.apk"
-              if gh release download "$tag" --pattern "MostafaDownloader-$abi.apk" --output old.apk --clobber; then
+              if gh release download "$tag" --pattern "MostafaDownloader-$abi.apk" --output old.apk; then
                 bsdiff old.apk "$new" patch.bin
                 psz=$(stat -c%s patch.bin)
                 fsz=$(stat -c%s "$new")
-                if [ "$psz" -lt $((fsz * 6 / 10)) ]; then
+                if [ "$psz" -lt $((fsz * 85 / 100)) ]; then
                   mv patch.bin "out/patch-from-$code-$abi.bin"
                 fi
                 rm -f old.apk patch.bin
