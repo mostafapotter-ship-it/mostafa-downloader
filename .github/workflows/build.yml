@@ -51,8 +51,11 @@ jobs:
         run: |
           sudo apt-get update -y > /dev/null
           sudo apt-get install -y bsdiff > /dev/null
-          for tag in $(gh release list --limit 20 --json tagName,isPrerelease --jq '[.[] | select(.isPrerelease | not)] | .[:2] | .[].tagName'); do
+          gh release list --limit 40 --json tagName,isPrerelease > rel.json
+          tags="$(jq -r '[.[] | select(.isPrerelease | not)] | .[:2] | .[].tagName' rel.json) $(jq -r '[.[] | select(.isPrerelease)] | .[:2] | .[].tagName' rel.json)"
+          for tag in $tags; do
             code="${tag#v}"
+            code="${code#test-}"
             for abi in arm64-v8a armeabi-v7a; do
               new="out/MostafaDownloader-$abi.apk"
               if gh release download "$tag" --pattern "MostafaDownloader-$abi.apk" --output old.apk --clobber; then
